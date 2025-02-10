@@ -1,0 +1,28 @@
+# Virtual environment
+.venv/
+
+# Environment variables
+.env
+
+# Session and lock files
+.sesskey
+uv.lock
+
+# Python version file
+.python-version
+
+# Byte-compiled and cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# macOS system files
+.DS_Store
+
+# IDE/editor configurations
+.idea/
+.vscode/
+
+# Log files
+*.log
