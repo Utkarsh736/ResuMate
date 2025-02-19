@@ -1,44 +1,53 @@
-import os 
+import os
+import json
 import google.generativeai as genai
-from google.ai.generativelanguage_v1beta.types import content
+from google.api_core import retry
 
 class Gemini:
+    def __init__(self):
+        self.api_key = os.getenv("GEMINI_API_KEY")
+        if not self.api_key:
+            raise ValueError("GEMINI_API_KEY environment variable not set")
+        
+        genai.configure(api_key=self.api_key)
+        self.model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            generation_config={
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "max_output_tokens": 4096,
+            }
+        )
+        
+        self.prompt_template = """
+        Analyze this resume and provide structured JSON feedback with two fields:
+        1. 'review': Detailed professional feedback focusing on:
+           - Formatting and structure
+           - Content relevance and clarity
+           - Keyword optimization
+           - Areas for improvement
+        2. 'revisedResume': A rewritten version incorporating suggested improvements
+        
+        Resume Content:
+        {resume_text}
+        
+        Return only valid JSON with these two fields. Do not include markdown formatting.
+        """
 
-	def __init__(self):
-		try:
-			api_key = os.environ["GEMINI_API_KEY"]
-			if not api_key:
-				raise ValueError("GEMINI_API_KEY environment variable is empty")
-			genai.configure(api_key=api_key)
-		except KeyError:
-			raise ValueError("GEMINI_API_KEY environment variable not found. Please check your .env file.")
-
-		generation_config = {
-			"temperature": 1,
-			"top_p": 0.95,
-			"top_k": 40,
-			"max_output_tokens": 8192,
-			"response_schema": content.Schema(
-				type = content.Type.OBJECT,
-				enum = [],
-				required = ["review", "revisedResume"],
-				properties = {
-					"review": content.Schema(
-						type = content.Type.STRING,
-					),
-					"revisedResume": content.Schema(
-						type = content.Type.STRING,
-					),
-				},
-			),
-			"response_mime_type": "application/json",
-		}
-
-		self.model = genai.GenerativeModel(model_name="gemini-1.5-flash", generation_config=generation_config)
-
-	def review(self, path):
-		sample_doc = genai.upload_file(path=path, mime_type='application/pdf')
-		prompt = "This is a resume. Provide feedback on the resume including suggestions for improvement. After the suggestions, add a dashed line and then provide a text version of the resume with improvements applied."
-
-		response = self.model.generate_content([sample_doc, prompt])
-		return response.text
+    @retry.Retry(deadline=30)
+    def review(self, resume_text):
+        try:
+            prompt = self.prompt_template.format(resume_text=resume_text)
+            response = self.model.generate_content(prompt)
+            
+            if not response.text:
+                raise ValueError("Empty response from API")
+            
+            # Clean response and parse JSON
+            cleaned_response = response.text.replace("```json", "").replace("```", "").strip()
+            return json.loads(cleaned_response)
+            
+        except json.JSONDecodeError:
+            raise ValueError("Invalid JSON response from API")
+        except Exception as e:
+            raise RuntimeError(f"API Error: {str(e)}")
